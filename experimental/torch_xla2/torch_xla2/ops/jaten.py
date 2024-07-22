@@ -258,11 +258,19 @@ def _is_int(x):
 def _aten_pow(x, y):
   if isinstance(y, int):
     y = float(y)
+  res_dtype = None
   if _is_int(x) and _is_int(y):
     # Do the math in float then cast
-    return jnp.astype(
-      jnp.power(jnp.astype(x, jnp.dtype('float')), y), x.dtype)
-  return jnp.power(x, y)
+    res = jnp.power(jnp.astype(x, jnp.dtype('float')), y)
+    res_dtype = x.dtype
+  if isinstance(x, float):
+    res_dtype = _torch_binary_scalar_type(x, y)
+  if isinstance(y, float):
+    res_dtype = _torch_binary_scalar_type(y, x)
+  res = jnp.power(x, y)
+  if res_dtype:
+    res = res.astype(res_dtype)
+  return res
 
 
 @op(torch.ops.aten.view_as_complex)
@@ -1790,7 +1798,7 @@ def _aten_glu(x, dim=-1):
 # aten.hardtanh
 @op(torch.ops.aten.hardtanh)
 def _aten_hardtanh(input, min_val=-1.0, max_val=1.0, inplace=False):
-  return jnp.clip(input, min_val, max_val)
+  return jnp.clip(input, min_val, max_val).astype(input.dtype)
 
 
 # aten.lcm
@@ -2281,3 +2289,7 @@ def _aten_randint(
 @op(torch.ops.aten.dim, is_jax_function=False)
 def _aten_dim(self):
   return len(self.shape)
+
+@op(torch.ops.aten.log_sigmoid)
+def _aten_log_sigmoid(x):
+  return jax.nn.log_sigmoid(x)
