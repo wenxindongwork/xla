@@ -141,18 +141,14 @@ def local_process_count() -> int:
 @requires_pjrt
 def global_device_count() -> int:
   """Returns the total number of devices across all processes/hosts."""
-  print("wenxin(torch/xla) entering global_device_count()")
   return len(torch_xla._XLAC._xla_get_all_devices())
 
 
 @requires_pjrt
 def world_size() -> int:
   """Returns the total number of processes participating in the job."""
-  print("wenxin(torch/xla) entering world_size()")
   if torch_xla._XLAC._xla_get_replication_devices_count() == 0:
-    print("wenxin torch_xla._XLAC._xla_get_replication_devices_count() == 0")
     return 1
-  print("wenxin torch_xla._XLAC._xla_get_replication_devices_count() != 0")
   return global_device_count()
 
 
