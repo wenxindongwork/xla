@@ -1046,6 +1046,7 @@ def _run_step_closures():
 
 
 def mark_step(wait=False, reset_scope=True):
+  import pdb; pdb.set_trace()
   if xu.getenv_as('XLA_EMIT_STEPLOG', bool, False):
     print(
         'torch_xla.core.xla_model::mark_step\n',
