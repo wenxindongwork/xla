@@ -54,12 +54,12 @@ def set_all_buffers(m, params, buffers):
 
 class JittableModule(torch.nn.Module):
 
-    def __init__(self, m: torch.nn.Module, extra_jit_args={}, dedup_parameters=True):
+    def __init__(self, m: torch.nn.Module, side_effect = None, extra_jit_args={}, dedup_parameters=True):
         super().__init__()
         self.params, self.buffers = extract_all_buffers(m)
         self._model = m
         self._jitted = {}
-
+        self._side_effect = side_effect
         self._extra_jit_args = extra_jit_args
 
         self._extra_dumped_weights = {}
@@ -81,7 +81,7 @@ class JittableModule(torch.nn.Module):
 
 
     def functional_call(
-            self, method_name, params, buffers, *args, **kwargs):
+            self, fn, params, buffers, *args, **kwargs):
         kwargs = kwargs or {}
         params_copy = copy.copy(params)
         params_copy.update(buffers)
@@ -90,20 +90,36 @@ class JittableModule(torch.nn.Module):
             for new_key in v:
                 params_copy[new_key] = params_copy[k]
         with torch_stateless._reparametrize_module(self._model, params_copy):
-            res = getattr(self._model, method_name)(*args, **kwargs)
+            res = fn(*args, **kwargs)
         return res
 
 
+    # Override self.model.forward function with pure_fn_forward
+    def pure_fn_forward(self, *args, **kwargs):
+        old_kv_cache = self._side_effect.kv_caches
+        res = self._model(*args, **kwargs)
+        new_kv_cache = self._side_effect.kv_caches
+        self._side_effect.kv_caches = old_kv_cache
+        return res, new_kv_cache
+
+
     def forward(self, *args, **kwargs):
+        
         if 'forward' not in self._jitted:
+            fn = self.pure_fn_forward if self._side_effect else self._model.forward
             jitted = jax_jit(
-                functools.partial(self.functional_call, 'forward'),
+                functools.partial(self.functional_call, fn),
                 kwargs_for_jax_jit=self._extra_jit_args,
             )
             def jitted_forward(*args, **kwargs):
                 return jitted(self.params, self.buffers, *args, **kwargs)
             self._jitted['forward'] = jitted_forward
-        return self._jitted['forward'](*args, **kwargs)
+        res= self._jitted['forward'](*args, **kwargs)
+        if self._side_effect:
+            res, new_kv_cache = res
+            self._side_effect.kv_caches = new_kv_cache
+        return res
+        
 
     def __getattr__(self, key):
         if key == '_model':
@@ -114,7 +130,7 @@ class JittableModule(torch.nn.Module):
 
     def make_jitted(self, key):
         jitted = jax_jit(
-            functools.partial(self.functional_call, key), 
+            functools.partial(self.functional_call, getattr(self._model, key)), 
             kwargs_for_jax_jit=self._extra_jit_args)
         def call(*args, **kwargs):
             return jitted(self.params, self.buffers, *args, **kwargs)

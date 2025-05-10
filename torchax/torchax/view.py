@@ -137,6 +137,9 @@ class ReshapeInfo(ViewInfo):
         return jax_array.reshape(self.shape)
 
     def update_tensor(self, new_value: jax.Array, jax_array: jax.Array) -> jax.Array:
+        # print stack trace
+        # import traceback
+        # traceback.print_stack()
         return new_value.reshape(jax_array.shape)
 
     def calculate_output_shape(self, source: jax.Array) -> List[int]:
